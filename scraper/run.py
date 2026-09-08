@@ -5,122 +5,146 @@ from playwright.async_api import async_playwright
 URL="https://goaonline.gov.in/Appln/Uil/DeptServices?__DocId=IFT&__ServiceId=IFT47"
 OUT=Path("output"); OUT.mkdir(exist_ok=True)
 
-async def snap(page,name):
+async def save(page,name):
     (OUT/f"{name}.html").write_text(await page.content(),encoding="utf-8")
     await page.screenshot(path=str(OUT/f"{name}.png"),full_page=True)
 
 async def main():
     async with async_playwright() as p:
         browser=await p.chromium.launch(headless=True)
-        context=await browser.new_context(
-            viewport={"width":1440,"height":1000},
+        ctx=await browser.new_context(
+            viewport={"width":1440,"height":1100},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36"
         )
-        page=await context.new_page()
+        page=await ctx.new_page()
 
-        ajax=[]
-        responses=[]
-        page.on("request",lambda r: (
-            ajax.append({
-                "method":r.method,"url":r.url,"type":r.resource_type,
-                "post_data":r.post_data
-            }) if r.resource_type in ("xhr","fetch") else None
-        ))
-        async def on_response(r):
+        network=[]
+        async def response(r):
             if r.request.resource_type in ("xhr","fetch"):
-                item={"status":r.status,"url":r.url,"type":r.request.resource_type}
-                try:
-                    body=await r.text()
-                    item["body"]=body[:500000]
-                except Exception as e:
-                    item["body_error"]=repr(e)
-                responses.append(item)
-        page.on("response",on_response)
+                item={"method":r.request.method,"url":r.url,"status":r.status}
+                try: item["post_data"]=r.request.post_data
+                except: pass
+                try: item["body"]=(await r.text())[:1000000]
+                except Exception as e: item["body_error"]=repr(e)
+                network.append(item)
+        page.on("response",response)
 
-        print("Opening direct Know Your Scheme URL...")
         await page.goto(URL,wait_until="domcontentloaded",timeout=120000)
         await page.wait_for_timeout(5000)
-        print("Initial URL:",page.url)
-        await snap(page,"01-initial")
+        await save(page,"01-open")
 
-        # Confirm the actual controls discovered in the supplied debug.
-        print("Sector select:",await page.locator("#id20").count())
-        print("Display button:",await page.locator("#id2d").count())
+        # Capture every select with its options, regardless of generated ID.
+        selects=await page.locator("select").evaluate_all("""
+        els=>els.map((s,i)=>({
+          index:i,id:s.id,name:s.name,value:s.value,
+          aria:s.getAttribute('aria-label')||'',
+          parentText:(s.parentElement?.innerText||'').trim().slice(0,1000),
+          options:[...s.options].map(o=>({text:(o.textContent||'').trim(),value:o.value}))
+        }))
+        """)
+        (OUT/"02-all-selects.json").write_text(json.dumps(selects,indent=2,ensure_ascii=False),encoding="utf-8")
 
-        # Sectorwise radio is radio22 on this page.
-        try:
-            await page.locator("#id42").check(force=True)
-        except Exception:
-            pass
+        # Find sector dropdown by its options, not its Wicket ID.
+        sector=None
+        for i,s in enumerate(selects):
+            texts=[o["text"].lower() for o in s["options"]]
+            score=sum(x in texts for x in [
+                "educational","health and family welfare","senior citizens",
+                "unemployment","agriculture","transport","business"
+            ])
+            if score>=2:
+                sector=i
+                break
 
-        # Select Educational by the real Wicket select ID.
-        sector=page.locator("#id20")
-        await sector.select_option("7")
-        await sector.dispatch_event("change")
-        await page.wait_for_timeout(3000)
+        if sector is None:
+            # Save diagnostic text if the dropdown is absent.
+            (OUT/"03-error.txt").write_text(
+                "Could not identify sector dropdown by options.\n"+json.dumps(selects,indent=2),
+                encoding="utf-8"
+            )
+            await save(page,"03-sector-not-found")
+            print("SECTOR DROPDOWN NOT FOUND")
+            print("Selects:",len(selects))
+            await browser.close()
+            return
 
-        print("Sector selected value:",await sector.input_value())
-        await snap(page,"02-educational-selected")
+        print("Sector dropdown index:",sector)
+        sel=page.locator("select").nth(sector)
+        opts=await sel.locator("option").evaluate_all(
+            "opts=>opts.map(o=>({text:(o.textContent||'').trim(),value:o.value}))"
+        )
+        educational=next((o for o in opts if o["text"].strip().lower() in ("educational","education")),None)
+        if not educational:
+            raise RuntimeError("Educational option not found")
 
-        # The Wicket handler is attached to id2d. Click the actual button.
-        before=await page.locator("body").inner_text()
-        print("Clicking Display Schemes...")
-        await page.locator("#id2d").click(force=True,timeout=30000)
+        await sel.select_option(educational["value"])
+        await sel.dispatch_event("change")
+        await page.wait_for_timeout(2500)
+        await save(page,"04-educational-selected")
 
-        # Wicket AJAX can take time; wait for the loading modal to disappear and
-        # for the result area/body to change.
-        for n in range(20):
+        # Find Display Schemes by visible/value text, not ID.
+        controls=page.locator("button,input[type=button],input[type=submit],a")
+        display=None
+        for i in range(await controls.count()):
+            el=controls.nth(i)
+            try:
+                tag=await el.evaluate("(e)=>e.tagName")
+                txt=(await el.inner_text()) if tag in ("BUTTON","A") else (await el.get_attribute("value") or "")
+                if re.search(r"^\s*display\s+schemes\s*$",txt,re.I) and await el.is_visible():
+                    display=el
+                    break
+            except: pass
+
+        if display is None:
+            raise RuntimeError("Display Schemes control not found")
+
+        before=(await page.locator("body").inner_text())
+        await display.click(force=True,timeout=30000)
+
+        # Wait up to 20 sec for Wicket AJAX/result update.
+        changed=False
+        for _ in range(20):
             await page.wait_for_timeout(1000)
-            after=await page.locator("body").inner_text()
-            if after != before and (
-                "schemes found" in after.lower()
-                or "scheme" in after.lower()
-                or len(after) > len(before)+100
-            ):
-                print("Page changed after",n+1,"seconds")
+            after=(await page.locator("body").inner_text())
+            if after != before:
+                changed=True
                 break
 
         await page.wait_for_timeout(3000)
-        print("Final URL:",page.url)
-        await snap(page,"03-after-display")
+        await save(page,"05-results")
 
-        body=(await page.locator("body").inner_text())[:300000]
         links=await page.locator("a").evaluate_all("""
         els=>els.map((a,i)=>({
-          index:i,
-          text:(a.innerText||'').trim(),
-          href:a.href||'',
-          onclick:a.getAttribute('onclick')||'',
-          id:a.id||''
+          index:i,text:(a.innerText||'').trim(),href:a.href||'',
+          onclick:a.getAttribute('onclick')||'',id:a.id||''
         })).filter(x=>x.text||x.href)
         """)
 
-        # Extract visible text blocks around likely scheme cards.
+        # Extract likely document links WITHOUT requesting them.
+        documents=[x for x in links if re.search(
+            r'pdf|notification|application|declaration|download|form|document',
+            (x["text"]+" "+x["href"]+" "+x["onclick"]),re.I
+        )]
+
         result={
             "url":page.url,
-            "sector_value":await sector.input_value(),
-            "sector_text":await sector.locator("option:checked").text_content(),
-            "body_text":body,
-            "links":links,
-            "ajax_requests":ajax,
-            "ajax_responses":responses,
+            "sector_index":sector,
+            "sector_id":await sel.get_attribute("id"),
+            "sector_name":await sel.get_attribute("name"),
+            "educational_value":educational["value"],
+            "display_clicked":True,
+            "body_changed":changed,
+            "body_text":(await page.locator("body").inner_text())[:300000],
+            "all_links":links,
+            "document_links":documents,
+            "network":network
         }
-        (OUT/"04-result.json").write_text(
-            json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8"
-        )
-
-        # Save a compact list of likely PDF/document links. We never request them.
-        docs=[x for x in links if re.search(
-            r'\.pdf($|[?#])|notification|application|declaration|download|form',
-            (x.get("href","")+" "+x.get("text","")),re.I
-        )]
-        (OUT/"05-document-links.json").write_text(
-            json.dumps(docs,indent=2,ensure_ascii=False),encoding="utf-8"
-        )
-
-        print("Likely document links found:",len(docs))
-        print("AJAX responses captured:",len(responses))
-        print("DONE")
+        (OUT/"06-final.json").write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8")
+        print("SUCCESS")
+        print("Final URL:",page.url)
+        print("Body changed:",changed)
+        print("Document-like links:",len(documents))
+        print("AJAX responses:",len(network))
         await browser.close()
 
 asyncio.run(main())
