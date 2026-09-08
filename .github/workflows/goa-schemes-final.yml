@@ -27,7 +27,7 @@ jobs:
           python -m playwright install --with-deps chromium
 
       - name: Scrape Goa Government Schemes
-        run: python scraper/goa_schemes_final.py
+        run: python goa_schemes_final.py
 
       - name: Commit updated scheme data
         run: |
