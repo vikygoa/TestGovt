@@ -1,26 +1,26 @@
-name: Goa Schemes Real Discovery v6
+name: Goa Schemes Real Flow v7
 on:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  discover:
+  run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install Playwright
+      - name: Install
         run: |
           pip install -r requirements.txt
           python -m playwright install --with-deps chromium
-      - name: Run discovery
+      - name: Run
         run: python scraper/run.py
-      - name: Upload debug artifact
+      - name: Upload debug
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: goa-schemes-v6-debug
+          name: goa-schemes-v7-debug
           path: output/
           retention-days: 7
