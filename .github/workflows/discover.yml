@@ -1,4 +1,4 @@
-name: Discover Goa Scheme Page
+name: Discover Goa Scheme Page v3
 
 on:
   workflow_dispatch:
@@ -27,8 +27,9 @@ jobs:
         run: python scraper/discover_schemes.py
 
       - name: Upload debug artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: goa-scheme-page-v2
+          name: goa-scheme-page-v3-debug
           path: output/
           retention-days: 7
