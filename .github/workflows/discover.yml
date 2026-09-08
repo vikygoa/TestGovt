@@ -1,35 +1,26 @@
-name: Discover Goa Scheme Page v3
-
+name: Goa Schemes Real Discovery v6
 on:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   discover:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: Install Playwright
         run: |
           pip install -r requirements.txt
           python -m playwright install --with-deps chromium
-
       - name: Run discovery
-        run: python scraper/discover_schemes.py
-
+        run: python scraper/run.py
       - name: Upload debug artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: goa-scheme-page-v3-debug
+          name: goa-schemes-v6-debug
           path: output/
           retention-days: 7
