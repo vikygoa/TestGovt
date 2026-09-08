@@ -1,6 +1,28 @@
 {
   "source": "Goa Online - Know Your Scheme",
-  "generated_at": null,
+  "generated_at": "2026-09-08T08:12:00.766034+00:00",
   "pdf_policy": "links_only_no_download",
-  "schemes": []
+  "schemes": [
+    {
+      "id": "goa-online-government-of-goa-india",
+      "name": "Goa Online, Government of Goa, India",
+      "sector": "Business",
+      "department": "",
+      "description": "",
+      "benefits": "",
+      "eligibility": "",
+      "documents_required": [],
+      "downloads": [
+        {
+          "label": "How to validate e-sign",
+          "url": "https://services.goaonline.gov.in/Downloads/E-sign_manual.pdf",
+          "type": "pdf",
+          "kind": "document"
+        }
+      ],
+      "source_url": "https://services.goaonline.gov.in/ServiceWizard#",
+      "scraped_at": "2026-09-08T08:12:00.740685+00:00",
+      "raw_text_hash": "c5bd5c0d53063ca61c402944f06151ee487c692c69f5c73f6a0b3d4a86d7528b"
+    }
+  ]
 }
