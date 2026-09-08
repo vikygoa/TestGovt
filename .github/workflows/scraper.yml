@@ -1,0 +1,46 @@
+name: Goa Online Schemes Scraper
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 2 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python packages
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run Goa Online scraper
+        run: python scraper/goa_online_scraper.py
+
+      - name: Show scrape report
+        if: always()
+        run: |
+          if [ -f output/scrape-report.json ]; then
+            cat output/scrape-report.json
+          fi
+
+      - name: Commit updated scheme data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add output/schemes.json output/scrape-report.json logs/
+          git diff --cached --quiet || git commit -m "Update Goa Online schemes"
+          git push
